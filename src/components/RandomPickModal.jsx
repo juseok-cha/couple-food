@@ -9,18 +9,31 @@ export default function RandomPickModal({ foods, onClose }) {
   const [displayFood, setDisplayFood] = useState(foods[0])
   const [result, setResult] = useState(null)
   const intervalRef = useRef(null)
+  const lastResultRef = useRef(null) // keep last picked item across retries
+
+  // Pick a random food, optionally avoiding the last pick
+  const pickFood = (exclude) => {
+    if (!exclude) {
+      return foods[Math.floor(Math.random() * foods.length)]
+    }
+    const pool = foods.filter((f) => f.id !== exclude.id)
+    // If only one item exists, fallback to it
+    const source = pool.length ? pool : foods
+    return source[Math.floor(Math.random() * source.length)]
+  }
 
   useEffect(() => {
     // Pick the actual result upfront
-    const picked = foods[Math.floor(Math.random() * foods.length)]
+    const picked = pickFood(lastResultRef.current)
     setResult(picked)
+    lastResultRef.current = picked
 
     // Animate through random items with slowing ticks
     let elapsed = 0
     let tick = TICK_START
 
     const spin = () => {
-      setDisplayFood(foods[Math.floor(Math.random() * foods.length)])
+      setDisplayFood(pickFood())
       elapsed += tick
 
       // Gradually slow down
@@ -48,14 +61,15 @@ export default function RandomPickModal({ foods, onClose }) {
     setDisplayFood(foods[0])
     setResult(null)
 
-    const picked = foods[Math.floor(Math.random() * foods.length)]
+    const picked = pickFood(lastResultRef.current)
     setResult(picked)
+    lastResultRef.current = picked
 
     let elapsed = 0
     let tick = TICK_START
 
     const spin = () => {
-      setDisplayFood(foods[Math.floor(Math.random() * foods.length)])
+      setDisplayFood(pickFood())
       elapsed += tick
       tick = TICK_START + Math.floor((TICK_END - TICK_START) * (elapsed / SPIN_DURATION))
 

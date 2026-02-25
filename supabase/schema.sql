@@ -43,40 +43,46 @@ returns uuid language sql security definer stable as $$
   select room_id from room_members where user_id = auth.uid() limit 1;
 $$;
 
--- ── rooms policies ───────────────────────────────────────────
 -- Anyone can insert a new room (needed for room creation)
+drop policy if exists "rooms: anyone can create" on rooms;
 create policy "rooms: anyone can create"
   on rooms for insert to authenticated
   with check (true);
 
--- Only members can read their own room
-create policy "rooms: members can read"
+-- Authenticated users can read rooms (needed to fetch invite_code + returning from insert)
+drop policy if exists "rooms: authenticated can read" on rooms;
+create policy "rooms: authenticated can read"
   on rooms for select to authenticated
-  using (id = get_my_room_id());
+  using (true);
 
 -- ── room_members policies ────────────────────────────────────
 -- User can join a room (insert their own membership row)
+drop policy if exists "room_members: user can join" on room_members;
 create policy "room_members: user can join"
   on room_members for insert to authenticated
   with check (user_id = auth.uid());
 
--- User can read members of their own room
-create policy "room_members: members can read"
+-- Authenticated users can read member counts (needed before joining)
+drop policy if exists "room_members: authenticated can read" on room_members;
+create policy "room_members: authenticated can read"
   on room_members for select to authenticated
-  using (room_id = get_my_room_id());
+  using (true);
 
 -- ── foods policies ────────────────────────────────────────────
 -- Room members can read foods in their room
+drop policy if exists "foods: members can read" on foods;
 create policy "foods: members can read"
   on foods for select to authenticated
   using (room_id = get_my_room_id());
 
 -- Room members can add foods to their room
+drop policy if exists "foods: members can insert" on foods;
 create policy "foods: members can insert"
   on foods for insert to authenticated
   with check (room_id = get_my_room_id());
 
 -- Room members can delete any food in their room
+drop policy if exists "foods: members can delete" on foods;
 create policy "foods: members can delete"
   on foods for delete to authenticated
   using (room_id = get_my_room_id());
