@@ -76,7 +76,13 @@ function App() {
             ? <Navigate to="/login" replace />
             : !roomId
             ? <Navigate to="/join" replace />
-            : <Room session={session} roomId={roomId} />
+            : (
+              <Room
+                session={session}
+                roomId={roomId}
+                onLeft={() => { setRoomId(null); navigate('/join') }}
+              />
+            )
         }
       />
       <Route

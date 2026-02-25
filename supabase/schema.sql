@@ -68,6 +68,12 @@ create policy "room_members: authenticated can read"
   on room_members for select to authenticated
   using (true);
 
+-- User can leave a room (delete their own membership row)
+drop policy if exists "room_members: user can leave" on room_members;
+create policy "room_members: user can leave"
+  on room_members for delete to authenticated
+  using (user_id = auth.uid());
+
 -- ── foods policies ────────────────────────────────────────────
 -- Room members can read foods in their room
 drop policy if exists "foods: members can read" on foods;

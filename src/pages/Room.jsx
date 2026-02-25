@@ -4,7 +4,7 @@ import FoodCard from '../components/FoodCard'
 import AddFoodModal from '../components/AddFoodModal'
 import RandomPickModal from '../components/RandomPickModal'
 
-export default function Room({ session, roomId }) {
+export default function Room({ session, roomId, onLeft }) {
   const [foods, setFoods] = useState([])
   const [inviteCode, setInviteCode] = useState('')
   const [showAdd, setShowAdd] = useState(false)
@@ -95,6 +95,17 @@ export default function Room({ session, roomId }) {
     await supabase.auth.signOut()
   }
 
+  const handleLeaveRoom = async () => {
+    // Remove current user from this room, then let parent redirect to /join
+    await supabase
+      .from('room_members')
+      .delete()
+      .eq('room_id', roomId)
+      .eq('user_id', session.user.id)
+
+    onLeft?.()
+  }
+
   return (
     <div className="room-layout">
       {/* Header */}
@@ -110,8 +121,11 @@ export default function Room({ session, roomId }) {
               <span className="invite-icon">{copied ? '✓' : '🔗'}</span>
             </button>
           )}
+          <button className="signout-btn" onClick={handleLeaveRoom} title="방 나가기">
+            방 나가기
+          </button>
           <button className="signout-btn" onClick={handleSignOut} title="로그아웃">
-            나가기
+            로그아웃
           </button>
         </div>
       </header>
