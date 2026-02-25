@@ -94,18 +94,6 @@ export default function Join({ onJoined }) {
       return
     }
 
-    // Check room capacity (max 2 members)
-    const { count } = await supabase
-      .from('room_members')
-      .select('*', { count: 'exact', head: true })
-      .eq('room_id', room.id)
-
-    if (count >= 2) {
-      setError('이미 2명이 있는 방이에요. 초대 코드를 다시 확인해 주세요.')
-      setLoading(false)
-      return
-    }
-
     // Join room
     const { error: joinErr } = await supabase
       .from('room_members')
