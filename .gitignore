@@ -1,0 +1,24 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# env files (never commit real keys)
+.env
+.env.local
+.env.*.local
+
+# build output
+dist/
+build/
+
+# misc
+.DS_Store
+*.local
+.vite/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
