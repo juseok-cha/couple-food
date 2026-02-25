@@ -100,6 +100,12 @@ export default function Join({ onJoined }) {
       .insert({ room_id: room.id, user_id: user.id })
 
     if (joinErr) {
+      // If user is already in the room, just proceed
+      if (joinErr.code === '23505') {
+        onJoined(room.id)
+        setLoading(false)
+        return
+      }
       setError('이미 참여한 방이에요.')
       setLoading(false)
       return
@@ -108,9 +114,22 @@ export default function Join({ onJoined }) {
     onJoined(room.id)
   }
 
+  const handleLogout = async () => {
+    setError('')
+    setLoading(true)
+    await supabase.auth.signOut()
+    setLoading(false)
+  }
+
   return (
     <div className="auth-container">
       <div className="auth-card">
+        <div className="auth-card-top">
+          <div />
+          <button className="btn-secondary small" onClick={handleLogout} disabled={loading}>
+            로그아웃
+          </button>
+        </div>
         <div className="auth-logo">💑</div>
         <h1 className="auth-title">함께할 방을 만들어요</h1>
         <p className="auth-subtitle">둘만의 음식 리스트를 공유해봐요</p>
