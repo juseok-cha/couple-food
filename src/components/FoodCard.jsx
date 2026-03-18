@@ -4,8 +4,9 @@ const PERSON_LABEL = {
   둘다: { label: '둘 다', emoji: '👫' },
 }
 
-export default function FoodCard({ food, onDelete, style }) {
+export default function FoodCard({ food, currentUserId, onDelete, style }) {
   const person = food.person ? PERSON_LABEL[food.person] : null
+  const isOwn = food.added_by === currentUserId
 
   return (
     <li className="food-card" style={style}>
@@ -13,6 +14,9 @@ export default function FoodCard({ food, onDelete, style }) {
         <div className="food-card-info">
           <p className="food-name">{food.name}</p>
           {food.location && <p className="food-location">📍 {food.location}</p>}
+          {!isOwn && food.added_by && (
+            <p className="food-added-by">상대방이 추가했어요 💌</p>
+          )}
         </div>
         <div className="food-card-meta">
           {person && (

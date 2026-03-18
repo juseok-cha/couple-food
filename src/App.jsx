@@ -1,16 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './lib/supabase'
 import Login from './pages/Login'
-import Join from './pages/Join'
+import Home from './pages/Home'
 import Room from './pages/Room'
 
 function App() {
   const [session, setSession] = useState(undefined) // undefined = loading
-  const [roomId, setRoomId] = useState(undefined)
-  const navigate = useNavigate()
 
-  // Auth state listener
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
@@ -23,25 +20,7 @@ function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // Check room membership whenever session changes
-  useEffect(() => {
-    if (!session) {
-      setRoomId(null)
-      return
-    }
-
-    supabase
-      .from('room_members')
-      .select('room_id')
-      .eq('user_id', session.user.id)
-      .maybeSingle()
-      .then(({ data }) => {
-        setRoomId(data?.room_id ?? null)
-      })
-  }, [session])
-
-  // Loading state
-  if (session === undefined || (session && roomId === undefined)) {
+  if (session === undefined) {
     return (
       <div className="loading-screen">
         <div className="loading-spinner" />
@@ -53,46 +32,19 @@ function App() {
     <Routes>
       <Route
         path="/login"
-        element={
-          !session
-            ? <Login />
-            : <Navigate to={roomId ? '/room' : '/join'} replace />
-        }
+        element={!session ? <Login /> : <Navigate to="/home" replace />}
       />
       <Route
-        path="/join"
-        element={
-          !session
-            ? <Navigate to="/login" replace />
-            : roomId
-            ? <Navigate to="/room" replace />
-            : <Join onJoined={(id) => { setRoomId(id); navigate('/room') }} />
-        }
+        path="/home"
+        element={!session ? <Navigate to="/login" replace /> : <Home session={session} />}
       />
       <Route
-        path="/room"
-        element={
-          !session
-            ? <Navigate to="/login" replace />
-            : !roomId
-            ? <Navigate to="/join" replace />
-            : (
-              <Room
-                session={session}
-                roomId={roomId}
-                onLeft={() => { setRoomId(null); navigate('/join') }}
-              />
-            )
-        }
+        path="/room/:roomId"
+        element={!session ? <Navigate to="/login" replace /> : <Room session={session} />}
       />
       <Route
         path="*"
-        element={
-          <Navigate
-            to={!session ? '/login' : roomId ? '/room' : '/join'}
-            replace
-          />
-        }
+        element={<Navigate to={session ? '/home' : '/login'} replace />}
       />
     </Routes>
   )

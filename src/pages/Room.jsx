@@ -1,26 +1,36 @@
 import { useEffect, useState, useCallback } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import FoodCard from '../components/FoodCard'
 import AddFoodModal from '../components/AddFoodModal'
 import RandomPickModal from '../components/RandomPickModal'
+import ToastContainer, { useToast } from '../components/Toast'
 
-export default function Room({ session, roomId, onLeft }) {
+export default function Room({ session }) {
+  const { roomId } = useParams()
+  const navigate = useNavigate()
+  const { addToast } = useToast()
+
   const [foods, setFoods] = useState([])
+  const [roomTitle, setRoomTitle] = useState('')
   const [inviteCode, setInviteCode] = useState('')
   const [showAdd, setShowAdd] = useState(false)
   const [showRandom, setShowRandom] = useState(false)
   const [copied, setCopied] = useState(false)
   const [loading, setLoading] = useState(true)
 
-  // Fetch invite code
+  // Fetch room info
   useEffect(() => {
     supabase
       .from('rooms')
-      .select('invite_code')
+      .select('invite_code, title')
       .eq('id', roomId)
       .single()
       .then(({ data }) => {
-        if (data) setInviteCode(data.invite_code)
+        if (data) {
+          setInviteCode(data.invite_code)
+          setRoomTitle(data.title || '우리의 맛집 리스트')
+        }
       })
   }, [roomId])
 
@@ -40,7 +50,7 @@ export default function Room({ session, roomId, onLeft }) {
     fetchFoods()
   }, [fetchFoods])
 
-  // Realtime subscription
+  // Realtime subscription — alert when others add food
   useEffect(() => {
     const channel = supabase
       .channel(`room-${roomId}`)
@@ -49,7 +59,13 @@ export default function Room({ session, roomId, onLeft }) {
         { event: '*', schema: 'public', table: 'foods', filter: `room_id=eq.${roomId}` },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            setFoods((prev) => [payload.new, ...prev])
+            const newFood = payload.new
+            setFoods((prev) => [newFood, ...prev])
+
+            // Alert only when added by someone else
+            if (newFood.added_by !== session.user.id) {
+              addToast?.(`"${newFood.name}" 이(가) 추가됐어요! 🍽️`, '🔔')
+            }
           } else if (payload.eventType === 'DELETE') {
             setFoods((prev) => prev.filter((f) => f.id !== payload.old.id))
           }
@@ -60,73 +76,55 @@ export default function Room({ session, roomId, onLeft }) {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [roomId])
+  }, [roomId, session.user.id, addToast])
 
   const handleDelete = async (id) => {
     await supabase.from('foods').delete().eq('id', id)
-    // Realtime will update state via subscription
   }
 
   const handleAdd = async (food) => {
-    await supabase.from('foods').insert({ ...food, room_id: roomId })
-    // Realtime will update state via subscription
+    await supabase.from('foods').insert({
+      ...food,
+      room_id: roomId,
+      added_by: session.user.id,
+    })
     setShowAdd(false)
   }
 
   const handleCopyCode = async () => {
     try {
       await navigator.clipboard.writeText(inviteCode)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
     } catch {
-      // Fallback for environments without clipboard API
       const el = document.createElement('textarea')
       el.value = inviteCode
       document.body.appendChild(el)
       el.select()
       document.execCommand('copy')
       document.body.removeChild(el)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
     }
-  }
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut()
-  }
-
-  const handleLeaveRoom = async () => {
-    // Remove current user from this room, then let parent redirect to /join
-    await supabase
-      .from('room_members')
-      .delete()
-      .eq('room_id', roomId)
-      .eq('user_id', session.user.id)
-
-    onLeft?.()
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   return (
     <div className="room-layout">
+      <ToastContainer />
+
       {/* Header */}
       <header className="room-header">
-        <div className="header-left">
-          <span className="header-logo">🍽️</span>
-          <span className="header-title">Couple Food</span>
+        <div className="room-header-left">
+          <button className="back-btn" onClick={() => navigate('/home')} title="뒤로가기">
+            ‹
+          </button>
+          <span className="room-header-title">{roomTitle}</span>
         </div>
-        <div className="header-right">
+        <div className="room-header-right">
           {inviteCode && (
             <button className="invite-btn" onClick={handleCopyCode} title="초대 코드 복사">
               <span className="invite-code">{inviteCode}</span>
               <span className="invite-icon">{copied ? '✓' : '🔗'}</span>
             </button>
           )}
-          <button className="signout-btn" onClick={handleLeaveRoom} title="방 나가기">
-            방 나가기
-          </button>
-          <button className="signout-btn" onClick={handleSignOut} title="로그아웃">
-            로그아웃
-          </button>
         </div>
       </header>
 
@@ -148,6 +146,7 @@ export default function Room({ session, roomId, onLeft }) {
               <FoodCard
                 key={food.id}
                 food={food}
+                currentUserId={session.user.id}
                 onDelete={handleDelete}
                 style={{ animationDelay: `${i * 40}ms` }}
               />
