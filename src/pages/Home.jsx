@@ -1,313 +1,250 @@
-import { useState, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import {
+  createRoomWithMembership,
+  getMyProfile,
+  getMyRooms,
+  joinRoomByInviteCode,
+  updateMyProfile,
+  uploadAvatar,
+} from '../lib/dataApi'
 import { supabase } from '../lib/supabase'
 
-function generateInviteCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
-}
-
-// ── Tab: Rooms List ───────────────────────────────────────────
-function RoomsTab({ session }) {
-  const [rooms, setRooms] = useState([])
-  const [loading, setLoading] = useState(true)
+export default function Home({ session }) {
   const navigate = useNavigate()
-
-  useEffect(() => {
-    const fetchRooms = async () => {
-      const { data } = await supabase
-        .from('room_members')
-        .select('room_id, rooms(id, title, invite_code, created_at)')
-        .eq('user_id', session.user.id)
-        .order('created_at', { ascending: false })
-
-      if (data) {
-        setRooms(data.map((m) => m.rooms).filter(Boolean))
-      }
-      setLoading(false)
-    }
-
-    fetchRooms()
-  }, [session.user.id])
-
-  if (loading) {
-    return (
-      <div className="loading-screen">
-        <div className="loading-spinner" />
-      </div>
-    )
-  }
-
-  if (rooms.length === 0) {
-    return (
-      <div className="empty-state">
-        <div className="empty-icon">🍽️</div>
-        <p className="empty-title">아직 참여한 방이 없어요</p>
-        <p className="empty-sub">아래 탭에서 방을 만들거나 코드로 입장해봐요!</p>
-      </div>
-    )
-  }
-
-  return (
-    <ul className="room-list">
-      {rooms.map((room, i) => (
-        <li
-          key={room.id}
-          className="room-card"
-          style={{ animationDelay: `${i * 50}ms` }}
-          onClick={() => navigate(`/room/${room.id}`)}
-        >
-          <div className="room-card-emoji">🍜</div>
-          <div className="room-card-info">
-            <p className="room-card-title">{room.title}</p>
-            <p className="room-card-meta">코드: {room.invite_code}</p>
-          </div>
-          <span className="room-card-arrow">›</span>
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-// ── Tab: Profile ──────────────────────────────────────────────
-function ProfileTab({ session }) {
-  const [avatarUrl, setAvatarUrl] = useState(null)
-  const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef(null)
 
-  useEffect(() => {
-    supabase
-      .from('profiles')
-      .select('avatar_url')
-      .eq('id', session.user.id)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data?.avatar_url) setAvatarUrl(data.avatar_url)
-      })
-  }, [session.user.id])
+  const [avatarUrl, setAvatarUrl] = useState(session.user.user_metadata?.avatar_url || null)
+  const [nickname, setNickname] = useState(session.user.user_metadata?.nickname || '')
+  const [savedNickname, setSavedNickname] = useState(session.user.user_metadata?.nickname || '')
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [actionLoading, setActionLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [connectedRoom, setConnectedRoom] = useState(null)
+  const [memberCount, setMemberCount] = useState(0)
+  const [mode, setMode] = useState('invite')
+  const [inviteCodeInput, setInviteCodeInput] = useState('')
+  const [copied, setCopied] = useState(false)
+  const [shared, setShared] = useState(false)
 
-  const handleAvatarClick = () => fileInputRef.current?.click()
+  const fetchMyCouple = useCallback(async () => {
+    setError('')
 
-  const handleFileChange = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const { data: rooms, error: roomsError } = await getMyRooms(session.user.id)
 
-    setUploading(true)
-    const ext = file.name.split('.').pop()
-    const path = `${session.user.id}/avatar.${ext}`
-
-    const { error: uploadError } = await supabase.storage
-      .from('avatars')
-      .upload(path, file, { upsert: true })
-
-    if (!uploadError) {
-      const { data: { publicUrl } } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(path)
-
-      await supabase
-        .from('profiles')
-        .upsert({ id: session.user.id, avatar_url: publicUrl, updated_at: new Date().toISOString() })
-
-      setAvatarUrl(publicUrl + '?t=' + Date.now())
+    if (roomsError) {
+      setError(roomsError)
+      return
     }
 
-    setUploading(false)
+    const room = rooms[0] || null
+    setConnectedRoom(room)
+    setMemberCount(room?.member_count || 0)
+
+    if (!room) {
+      setMemberCount(0)
+      return
+    }
+  }, [session.user.id])
+
+  useEffect(() => {
+    let active = true
+
+    const loadHome = async () => {
+      setLoading(true)
+
+      const { data: profile, error: profileError } = await getMyProfile(session.user.id)
+
+      if (!active) return
+
+      if (profileError) {
+        setError(profileError)
+      } else if (profile) {
+        const nextNickname = profile.nickname || session.user.user_metadata?.nickname || ''
+        const nextAvatarUrl = profile.avatar_url || session.user.user_metadata?.avatar_url || null
+
+        setNickname(nextNickname)
+        setSavedNickname(nextNickname)
+        setAvatarUrl(nextAvatarUrl)
+      }
+
+      await fetchMyCouple()
+
+      if (active) {
+        setLoading(false)
+      }
+    }
+
+    loadHome()
+
+    return () => {
+      active = false
+    }
+  }, [fetchMyCouple, session.user.id, session.user.user_metadata])
+
+  useEffect(() => {
+    if (!connectedRoom?.id) return undefined
+
+    const channel = supabase
+      .channel(`couple-members-${connectedRoom.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'room_members',
+        filter: `room_id=eq.${connectedRoom.id}`,
+      }, () => {
+        fetchMyCouple()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [connectedRoom?.id, fetchMyCouple])
+
+  const partnerName = connectedRoom?.partner?.nickname || '파트너'
+  const isConnectedWithPartner = Boolean(connectedRoom?.partner || memberCount >= 2)
+
+  const handleCreateInvite = async () => {
+    setError('')
+    setActionLoading(true)
+
+    const { data, error: createError } = await createRoomWithMembership({
+      userId: session.user.id,
+      roomTitle: '우리의 저녁 리스트',
+    })
+
+    if (createError) {
+      setError(createError)
+      setActionLoading(false)
+      return
+    }
+
+    setConnectedRoom(data)
+    await fetchMyCouple()
+    setActionLoading(false)
+  }
+
+  const handleAcceptInvite = async () => {
+    const cleanedCode = inviteCodeInput.trim().toUpperCase()
+    setError('')
+
+    if (!cleanedCode) {
+      setError('파트너가 보낸 초대 코드를 입력해 주세요.')
+      return
+    }
+
+    setActionLoading(true)
+
+    const { data, error: joinError } = await joinRoomByInviteCode({
+      userId: session.user.id,
+      inviteCode: cleanedCode,
+    })
+
+    if (joinError) {
+      setError(joinError)
+      setActionLoading(false)
+      return
+    }
+
+    setInviteCodeInput('')
+    setConnectedRoom(data)
+    await fetchMyCouple()
+    setActionLoading(false)
+  }
+
+  const handleSaveProfile = async () => {
+    setError('')
+    setSavingProfile(true)
+
+    const { data, error: profileError } = await updateMyProfile({
+      userId: session.user.id,
+      nickname,
+      avatarUrl,
+    })
+
+    if (profileError) {
+      setError(profileError)
+    } else {
+      setNickname(data.nickname)
+      setSavedNickname(data.nickname)
+    }
+
+    setSavingProfile(false)
+  }
+
+  const copyInviteCode = async () => {
+    if (!connectedRoom?.invite_code) return false
+
+    try {
+      await navigator.clipboard.writeText(connectedRoom.invite_code)
+    } catch {
+      const textarea = document.createElement('textarea')
+      textarea.value = connectedRoom.invite_code
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+
+    return true
+  }
+
+  const handleCopyInviteCode = async () => {
+    const didCopy = await copyInviteCode()
+    if (!didCopy) return
+
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleShareInvite = async () => {
+    if (!connectedRoom?.invite_code) return
+
+    const shareText = `Couple Food에서 우리 저녁 리스트에 들어와줘. 초대 코드: ${connectedRoom.invite_code}`
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: 'Couple Food 초대',
+          text: shareText,
+        })
+      } else {
+        await copyInviteCode()
+      }
+    } catch {
+      await copyInviteCode()
+    }
+
+    setShared(true)
+    setTimeout(() => setShared(false), 2000)
+  }
+
+  const handleFileChange = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setError('')
+    setUploadingAvatar(true)
+
+    const { data, error: uploadError } = await uploadAvatar({ userId: session.user.id, file })
+
+    if (uploadError) {
+      setError(uploadError)
+    } else {
+      setAvatarUrl(data)
+      if (savedNickname) {
+        await updateMyProfile({ userId: session.user.id, nickname: savedNickname, avatarUrl: data })
+      }
+    }
+
+    setUploadingAvatar(false)
+    event.target.value = ''
   }
 
   const handleSignOut = () => supabase.auth.signOut()
-
-  return (
-    <div className="profile-section">
-      <div className="avatar-wrapper" onClick={handleAvatarClick}>
-        {avatarUrl ? (
-          <img src={avatarUrl} alt="프로필" className="avatar-img" />
-        ) : (
-          <div className="avatar-placeholder">🐰</div>
-        )}
-        <div className="avatar-edit-badge">
-          {uploading ? '⏳' : '✎'}
-        </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          style={{ display: 'none' }}
-          onChange={handleFileChange}
-        />
-      </div>
-
-      <p className="profile-email">{session.user.email}</p>
-
-      <div className="profile-actions">
-        <button className="btn-secondary" onClick={handleSignOut}>
-          로그아웃
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ── Tab: Create / Join Room ───────────────────────────────────
-function CreateTab({ session, onRoomJoined }) {
-  const [mode, setMode] = useState('create')
-  const [inviteCode, setInviteCode] = useState('')
-  const [roomTitle, setRoomTitle] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const navigate = useNavigate()
-
-  const handleCreate = async () => {
-    setError('')
-    setLoading(true)
-
-    let code = generateInviteCode()
-    let room = null
-
-    for (let i = 0; i < 5; i++) {
-      const { data, error: roomErr } = await supabase
-        .from('rooms')
-        .insert({
-          invite_code: code,
-          title: roomTitle.trim() || '우리의 맛집 리스트',
-        })
-        .select()
-        .single()
-
-      if (!roomErr) { room = data; break }
-      code = generateInviteCode()
-    }
-
-    if (!room) {
-      setError('방 생성에 실패했어요. 다시 시도해 주세요.')
-      setLoading(false)
-      return
-    }
-
-    const { error: memberErr } = await supabase
-      .from('room_members')
-      .insert({ room_id: room.id, user_id: session.user.id })
-
-    if (memberErr) {
-      setError('방 참여에 실패했어요. 다시 시도해 주세요.')
-      setLoading(false)
-      return
-    }
-
-    setLoading(false)
-    navigate(`/room/${room.id}`)
-  }
-
-  const handleJoin = async () => {
-    setError('')
-    if (!inviteCode.trim()) {
-      setError('초대 코드를 입력해 주세요.')
-      return
-    }
-
-    setLoading(true)
-
-    const { data: room, error: roomErr } = await supabase
-      .from('rooms')
-      .select('id')
-      .eq('invite_code', inviteCode.trim().toUpperCase())
-      .maybeSingle()
-
-    if (roomErr || !room) {
-      setError('존재하지 않는 초대 코드예요.')
-      setLoading(false)
-      return
-    }
-
-    const { error: joinErr } = await supabase
-      .from('room_members')
-      .insert({ room_id: room.id, user_id: session.user.id })
-
-    if (joinErr && joinErr.code !== '23505') {
-      setError('방 참여에 실패했어요. 다시 시도해 주세요.')
-      setLoading(false)
-      return
-    }
-
-    setLoading(false)
-    navigate(`/room/${room.id}`)
-  }
-
-  return (
-    <div className="create-room-section">
-      <h2 className="section-heading">방 만들기 / 입장</h2>
-
-      <div className="tab-group">
-        <button
-          className={`tab-btn${mode === 'create' ? ' active' : ''}`}
-          onClick={() => { setMode('create'); setError('') }}
-        >
-          새 방 만들기
-        </button>
-        <button
-          className={`tab-btn${mode === 'join' ? ' active' : ''}`}
-          onClick={() => { setMode('join'); setError('') }}
-        >
-          코드로 입장
-        </button>
-      </div>
-
-      {mode === 'create' ? (
-        <div className="join-content" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="input-group">
-            <label htmlFor="room-title">방 이름 (선택)</label>
-            <input
-              id="room-title"
-              type="text"
-              placeholder="ex) 우리 먹방 리스트 🍜"
-              value={roomTitle}
-              onChange={(e) => setRoomTitle(e.target.value)}
-              maxLength={30}
-            />
-          </div>
-          <p className="join-desc">
-            방을 만들면 <strong>8자리 초대 코드</strong>가 생성돼요.
-            파트너에게 코드를 공유해서 같이 써봐요!
-          </p>
-          {error && <p className="form-error">{error}</p>}
-          <button className="btn-primary" onClick={handleCreate} disabled={loading}>
-            {loading ? '방 만드는 중…' : '방 만들기 ✨'}
-          </button>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="input-group">
-            <label htmlFor="invite-code">초대 코드</label>
-            <input
-              id="invite-code"
-              type="text"
-              placeholder="ABCD1234"
-              value={inviteCode}
-              onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-              maxLength={8}
-              autoComplete="off"
-              className="code-input"
-            />
-          </div>
-          {error && <p className="form-error">{error}</p>}
-          <button className="btn-primary" onClick={handleJoin} disabled={loading}>
-            {loading ? '입장 중…' : '입장하기 🚀'}
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Home Page ─────────────────────────────────────────────────
-export default function Home({ session }) {
-  const [tab, setTab] = useState('rooms')
-
-  const tabs = [
-    { id: 'rooms', icon: '🏠', label: '방 목록' },
-    { id: 'create', icon: '✨', label: '방 만들기' },
-    { id: 'profile', icon: '🐰', label: '내 정보' },
-  ]
 
   return (
     <div className="home-layout">
@@ -318,24 +255,157 @@ export default function Home({ session }) {
         </div>
       </header>
 
-      <main className="home-content">
-        {tab === 'rooms' && <RoomsTab session={session} />}
-        {tab === 'create' && <CreateTab session={session} />}
-        {tab === 'profile' && <ProfileTab session={session} />}
-      </main>
+      <main className="home-content couple-home-content">
+        {loading ? (
+          <div className="loading-screen">
+            <div className="loading-spinner" />
+          </div>
+        ) : (
+          <>
+            <section className="couple-hero-card">
+              <div className="couple-profile-row">
+                <div className="avatar-wrapper" onClick={() => fileInputRef.current?.click()}>
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt="프로필" className="avatar-img" />
+                  ) : (
+                    <div className="avatar-placeholder">🐰</div>
+                  )}
+                  <div className="avatar-edit-badge">{uploadingAvatar ? '⏳' : '✎'}</div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={handleFileChange}
+                  />
+                </div>
 
-      <nav className="tab-bar">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            className={`tab-bar-item${tab === t.id ? ' active' : ''}`}
-            onClick={() => setTab(t.id)}
-          >
-            <span className="tab-icon">{t.icon}</span>
-            {t.label}
-          </button>
-        ))}
-      </nav>
+                <div className="couple-profile-copy">
+                  <p className="profile-email">{session.user.email}</p>
+                  <p className="couple-status">
+                    {savedNickname ? `${savedNickname}로 표시돼요.` : '파트너에게 보일 닉네임을 정해요.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="couple-profile-form">
+                <input
+                  type="text"
+                  value={nickname}
+                  onChange={(event) => setNickname(event.target.value)}
+                  placeholder="닉네임"
+                  maxLength={20}
+                  aria-label="닉네임"
+                />
+                <button
+                  className="btn-secondary small"
+                  onClick={handleSaveProfile}
+                  disabled={savingProfile || nickname.trim() === savedNickname}
+                >
+                  {savingProfile ? '저장 중' : '저장'}
+                </button>
+              </div>
+
+              {connectedRoom ? (
+                <>
+                  <p className="couple-status good">
+                    {isConnectedWithPartner ? `${partnerName}님과 연결됐어요.` : '파트너를 기다리는 중이에요.'}
+                  </p>
+                  {!isConnectedWithPartner && (
+                    <div className="couple-waiting-box">
+                      <p className="couple-code">초대 코드: {connectedRoom.invite_code}</p>
+                      <p className="join-desc">이 코드를 파트너에게 보내면 같은 저녁 리스트에 연결돼요.</p>
+                    </div>
+                  )}
+                  {connectedRoom.partner && (
+                    <div className="partner-card">
+                      <div className="partner-avatar">
+                        {connectedRoom.partner.avatar_url ? (
+                          <img src={connectedRoom.partner.avatar_url} alt="파트너 프로필" />
+                        ) : (
+                          <span>💌</span>
+                        )}
+                      </div>
+                      <div>
+                        <p className="partner-label">내 파트너</p>
+                        <p className="partner-name">{partnerName}</p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="couple-actions">
+                    {!isConnectedWithPartner && (
+                      <>
+                        <button className="btn-secondary" onClick={handleShareInvite}>
+                          {shared ? '공유 준비 완료' : '초대 공유'}
+                        </button>
+                        <button className="btn-secondary" onClick={handleCopyInviteCode}>
+                          {copied ? '복사 완료' : '코드 복사'}
+                        </button>
+                      </>
+                    )}
+                    <button className="btn-primary" onClick={() => navigate(`/room/${connectedRoom.id}`)}>
+                      공유 저녁 리스트 열기
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="couple-status">아직 커플 연결 전이에요. 아래에서 바로 시작해요.</p>
+
+                  <div className="tab-group">
+                    <button
+                      className={`tab-btn${mode === 'invite' ? ' active' : ''}`}
+                      onClick={() => { setMode('invite'); setError('') }}
+                    >
+                      초대 보내기
+                    </button>
+                    <button
+                      className={`tab-btn${mode === 'accept' ? ' active' : ''}`}
+                      onClick={() => { setMode('accept'); setError('') }}
+                    >
+                      초대 받기
+                    </button>
+                  </div>
+
+                  {mode === 'invite' ? (
+                    <div className="couple-panel">
+                      <p className="join-desc">내 초대 코드를 만들고 파트너에게 공유해요.</p>
+                      <button className="btn-primary" onClick={handleCreateInvite} disabled={actionLoading}>
+                        {actionLoading ? '코드 생성 중...' : '내 초대 코드 만들기'}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="couple-panel">
+                      <div className="input-group">
+                        <label htmlFor="invite-code">파트너 초대 코드</label>
+                        <input
+                          id="invite-code"
+                          type="text"
+                          placeholder="ABCD1234"
+                          value={inviteCodeInput}
+                          onChange={(event) => setInviteCodeInput(event.target.value.toUpperCase())}
+                          maxLength={8}
+                          autoComplete="off"
+                          className="code-input"
+                        />
+                      </div>
+                      <button className="btn-primary" onClick={handleAcceptInvite} disabled={actionLoading}>
+                        {actionLoading ? '연결 중...' : '파트너와 연결하기'}
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {error && <p className="form-error">{error}</p>}
+            </section>
+
+            <button className="btn-ghost couple-logout" onClick={handleSignOut}>
+              로그아웃
+            </button>
+          </>
+        )}
+      </main>
     </div>
   )
 }

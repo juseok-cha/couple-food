@@ -4,7 +4,7 @@ const SPIN_DURATION = 2000 // ms
 const TICK_START = 60 // ms between ticks (fast)
 const TICK_END = 300 // ms between ticks (slow)
 
-export default function RandomPickModal({ foods, onClose }) {
+export default function RandomPickModal({ foods, onClose, onMarkEaten }) {
   const [phase, setPhase] = useState('spinning') // 'spinning' | 'result'
   const [displayFood, setDisplayFood] = useState(foods[0])
   const [result, setResult] = useState(null)
@@ -87,6 +87,14 @@ export default function RandomPickModal({ foods, onClose }) {
     intervalRef.current = setTimeout(spin, tick)
   }
 
+  const handleDecide = async () => {
+    if (result && onMarkEaten) {
+      await onMarkEaten(result)
+    }
+
+    onClose()
+  }
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-sheet random-modal" onClick={(e) => e.stopPropagation()}>
@@ -102,6 +110,15 @@ export default function RandomPickModal({ foods, onClose }) {
           {phase === 'result' && displayFood.location && (
             <p className="roulette-location">📍 {displayFood.location}</p>
           )}
+          {phase === 'result' && displayFood.category && (
+            <p className="roulette-person">{displayFood.category}</p>
+          )}
+          {phase === 'result' && displayFood.price_level && (
+            <p className="roulette-person">{'₩'.repeat(displayFood.price_level)}</p>
+          )}
+          {phase === 'result' && displayFood.notes && (
+            <p className="roulette-note">{displayFood.notes}</p>
+          )}
           {phase === 'result' && displayFood.person && (
             <p className="roulette-person">
               {displayFood.person === '여친' ? '👩 여친이 원했어요' :
@@ -116,8 +133,8 @@ export default function RandomPickModal({ foods, onClose }) {
             <button className="btn-secondary" onClick={handleRetry}>
               다시 뽑기 🔄
             </button>
-            <button className="btn-primary" onClick={onClose}>
-              이걸로 결정! ✓
+            <button className="btn-primary" onClick={handleDecide}>
+              먹은 기록에 저장
             </button>
           </div>
         )}

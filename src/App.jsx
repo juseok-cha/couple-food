@@ -4,6 +4,7 @@ import { supabase } from './lib/supabase'
 import Login from './pages/Login'
 import Home from './pages/Home'
 import Room from './pages/Room'
+import UpdatePassword from './pages/UpdatePassword'
 
 function App() {
   const [session, setSession] = useState(undefined) // undefined = loading
@@ -41,6 +42,10 @@ function App() {
       <Route
         path="/room/:roomId"
         element={!session ? <Navigate to="/login" replace /> : <Room session={session} />}
+      />
+      <Route
+        path="/update-password"
+        element={<UpdatePassword />}
       />
       <Route
         path="*"
