@@ -134,7 +134,7 @@ export default function RandomPickModal({ foods, onClose, onMarkEaten }) {
               다시 뽑기 🔄
             </button>
             <button className="btn-primary" onClick={handleDecide}>
-              먹은 기록에 저장
+              추억 남기기
             </button>
           </div>
         )}

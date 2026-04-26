@@ -4,8 +4,8 @@ const CATEGORIES = ['한식', '일식', '중식', '양식', '분식', '카페', 
 
 export default function AddFoodModal({ food, onClose, onAdd, onSave }) {
   const isEditing = Boolean(food)
-  const [name, setName] = useState(food?.name || '')
-  const [location, setLocation] = useState(food?.location || '')
+  const [placeName, setPlaceName] = useState(food?.place_name || food?.name || '')
+  const [mapUrl, setMapUrl] = useState(food?.map_url || '')
   const [person, setPerson] = useState(food?.person || '')
   const [category, setCategory] = useState(food?.category || '')
   const [notes, setNotes] = useState(food?.notes || '')
@@ -15,12 +15,14 @@ export default function AddFoodModal({ food, onClose, onAdd, onSave }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!name.trim()) return
+    if (!placeName.trim()) return
 
     setLoading(true)
     const payload = {
-      name: name.trim(),
-      location: location.trim() || null,
+      name: placeName.trim(),
+      place_name: placeName.trim(),
+      location: null,
+      map_url: mapUrl.trim() || null,
       person: person || null,
       category: category || null,
       notes: notes.trim() || null,
@@ -45,27 +47,28 @@ export default function AddFoodModal({ food, onClose, onAdd, onSave }) {
 
         <form onSubmit={handleSubmit} className="modal-form">
           <div className="input-group">
-            <label htmlFor="food-name">음식 이름 *</label>
+            <label htmlFor="food-place-name">가게 이름 *</label>
             <input
-              id="food-name"
+              id="food-place-name"
               type="text"
-              placeholder="ex) 삼겹살, 스시, 마라탕"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              placeholder="ex) 을지로 순대국집"
+              value={placeName}
+              onChange={(e) => setPlaceName(e.target.value)}
               required
               autoFocus
             />
           </div>
 
           <div className="input-group">
-            <label htmlFor="food-location">장소 (선택)</label>
+            <label htmlFor="food-map-url">네이버/카카오맵 링크 (선택)</label>
             <input
-              id="food-location"
-              type="text"
-              placeholder="ex) 강남구 논현동 맛집"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
+              id="food-map-url"
+              type="url"
+              placeholder="단축 링크 포함해서 지도 링크를 붙여 넣어 주세요"
+              value={mapUrl}
+              onChange={(e) => setMapUrl(e.target.value)}
             />
+            <p className="input-help">단축 링크도 저장할 수 있어요. 서버에서 위치를 찾아 가까운 순에 써요.</p>
           </div>
 
           <div className="input-group">
@@ -117,10 +120,10 @@ export default function AddFoodModal({ food, onClose, onAdd, onSave }) {
           </div>
 
           <div className="input-group">
-            <label htmlFor="food-notes">메모 (선택)</label>
+            <label htmlFor="food-notes">부가설명 (선택)</label>
             <textarea
               id="food-notes"
-              placeholder="ex) 웨이팅 길면 포장하기, 매운맛 2단계"
+              placeholder="ex) 여기선 육회김밥이 제일 맛있고, 마라크림떡볶이도 추천"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={3}
@@ -140,7 +143,7 @@ export default function AddFoodModal({ food, onClose, onAdd, onSave }) {
             <button type="button" className="btn-secondary" onClick={onClose}>
               취소
             </button>
-            <button type="submit" className="btn-primary" disabled={loading || !name.trim()}>
+            <button type="submit" className="btn-primary" disabled={loading || !placeName.trim()}>
               {loading ? '저장 중…' : isEditing ? '저장하기' : '추가하기'}
             </button>
           </div>

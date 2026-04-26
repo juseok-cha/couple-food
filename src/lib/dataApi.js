@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { parseMapLink } from './mapLinks'
 
 function normalizeError(error, fallback) {
   if (!error) return fallback
@@ -45,6 +46,52 @@ function isMissingFunctionError(error) {
 function generateInviteCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
   return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+}
+
+async function resolveMapUrl(mapUrl, placeName, location) {
+  if (!mapUrl) {
+    return { data: { map_url: null, latitude: null, longitude: null }, error: null }
+  }
+
+  const { data, error } = await supabase.functions.invoke('resolve-map-link', {
+    body: {
+      mapUrl,
+      placeName,
+      location,
+    },
+  })
+
+  if (!error && data) {
+    return {
+      data: {
+        map_url: data.mapUrl || mapUrl,
+        latitude: data.latitude ?? null,
+        longitude: data.longitude ?? null,
+      },
+      error: null,
+    }
+  }
+
+  const parsed = parseMapLink(mapUrl)
+  if (parsed.ok) {
+    return {
+      data: {
+        map_url: parsed.normalizedUrl || mapUrl,
+        latitude: parsed.latitude ?? null,
+        longitude: parsed.longitude ?? null,
+      },
+      error: null,
+    }
+  }
+
+  return {
+    data: {
+      map_url: mapUrl,
+      latitude: null,
+      longitude: null,
+    },
+    error: null,
+  }
 }
 
 export async function getMyRooms(userId) {
@@ -266,10 +313,24 @@ export async function fetchFoods(roomId) {
 }
 
 export async function addFood({ roomId, userId, food }) {
+  const { data: resolvedMap, error: mapError } = await resolveMapUrl(
+    food.map_url,
+    food.place_name || food.name,
+    food.location,
+  )
+
+  if (mapError) {
+    return { data: null, error: normalizeError(mapError, '지도 링크를 처리하지 못했어요.') }
+  }
+
   let insert = await supabase
     .from('foods')
     .insert({
       ...food,
+      map_url: resolvedMap.map_url,
+      place_name: food.place_name || null,
+      latitude: resolvedMap.latitude,
+      longitude: resolvedMap.longitude,
       price_level: food.price_level || null,
       is_favorite: Boolean(food.is_favorite),
       room_id: roomId,
@@ -294,10 +355,31 @@ export async function addFood({ roomId, userId, food }) {
 }
 
 export async function updateFood(foodId, updates) {
+  let resolvedUpdates = { ...updates }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'map_url')) {
+    const { data: resolvedMap, error: mapError } = await resolveMapUrl(
+      updates.map_url,
+      updates.place_name || updates.name,
+      updates.location,
+    )
+
+    if (mapError) {
+      return { data: null, error: normalizeError(mapError, '지도 링크를 처리하지 못했어요.') }
+    }
+
+    resolvedUpdates = {
+      ...resolvedUpdates,
+      map_url: resolvedMap.map_url,
+      latitude: resolvedMap.latitude,
+      longitude: resolvedMap.longitude,
+    }
+  }
+
   const { data, error } = await supabase
     .from('foods')
     .update({
-      ...updates,
+      ...resolvedUpdates,
       updated_at: new Date().toISOString(),
     })
     .eq('id', foodId)
@@ -327,6 +409,75 @@ export async function deleteFood(foodId) {
   }
 
   return { error: null }
+}
+
+export async function fetchMemories(roomId) {
+  const { data, error } = await supabase
+    .from('memories')
+    .select('*, foods(id, name, location, place_name, category)')
+    .eq('room_id', roomId)
+    .order('visited_at', { ascending: false })
+
+  if (error) {
+    return { data: [], error: normalizeError(error, '추억 목록을 불러오지 못했어요.') }
+  }
+
+  return { data: data || [], error: null }
+}
+
+export async function uploadMemoryPhoto({ roomId, userId, file }) {
+  const ext = file.name.includes('.') ? file.name.split('.').pop() : 'jpg'
+  const path = `${roomId}/${userId}/${Date.now()}-memory.${ext}`
+
+  const { error: uploadError } = await supabase.storage
+    .from('memory-photos')
+    .upload(path, file, { upsert: false })
+
+  if (uploadError) {
+    return { data: null, error: normalizeError(uploadError, '사진을 올리지 못했어요.') }
+  }
+
+  const { data: { publicUrl } } = supabase.storage
+    .from('memory-photos')
+    .getPublicUrl(path)
+
+  return { data: `${publicUrl}?t=${Date.now()}`, error: null }
+}
+
+export async function createMemory({ roomId, foodId, userId, file, note, visitedAt }) {
+  let photoUrl = null
+
+  if (file) {
+    const { data, error } = await uploadMemoryPhoto({ roomId, userId, file })
+    if (error) {
+      return { data: null, error }
+    }
+    photoUrl = data
+  }
+
+  const { data: memory, error: memoryError } = await supabase
+    .from('memories')
+    .insert({
+      room_id: roomId,
+      food_id: foodId,
+      created_by: userId,
+      photo_url: photoUrl,
+      note: note?.trim() || null,
+      visited_at: visitedAt,
+    })
+    .select('*, foods(id, name, location, place_name, category)')
+    .single()
+
+  if (memoryError) {
+    return { data: null, error: normalizeError(memoryError, '추억을 저장하지 못했어요.') }
+  }
+
+  const { error: updateError } = await updateFood(foodId, { eaten_at: visitedAt })
+  if (updateError) {
+    return { data: null, error: updateError }
+  }
+
+  return { data: memory, error: null }
 }
 
 export async function uploadAvatar({ userId, file }) {

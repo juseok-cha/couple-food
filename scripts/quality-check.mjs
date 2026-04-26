@@ -13,7 +13,9 @@ const checks = [
     file: 'src/pages/Room.jsx',
     patterns: [
       'updateFood',
-      'markFoodEaten',
+      'createMemory',
+      'fetchMemories',
+      'handleMarkVisited',
       'toggleFoodFavorite',
       'food-tools',
     ],
@@ -32,6 +34,8 @@ const checks = [
       'create or replace function public.get_my_couple',
       'foods: members can update',
       'price_level',
+      'create table if not exists public.memories',
+      'memory-photos',
       'room_members',
     ],
   },
@@ -40,6 +44,15 @@ const checks = [
     patterns: [
       'https://your-project-ref.supabase.co',
       'your-supabase-anon-or-publishable-key',
+    ],
+  },
+  {
+    file: 'supabase/functions/resolve-map-link/index.ts',
+    patterns: [
+      'Deno.serve',
+      'KAKAO_REST_API_KEY',
+      'followShortLink',
+      'searchPlace',
     ],
   },
 ]
@@ -64,6 +77,7 @@ const filesToScan = [
   'src/index.css',
   'supabase/schema.sql',
   'supabase/repair_schema.sql',
+  'supabase/functions/resolve-map-link/index.ts',
 ]
 
 for (const file of filesToScan) {

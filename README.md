@@ -41,11 +41,31 @@ For an existing Supabase project, run:
 The repair script creates or updates:
 
 - `profiles`, `rooms`, `room_members`, and `foods`
+- `memories` and `map_url` support for foods
 - couple creation/joining RPC functions
 - row level security policies
-- avatar storage policies
+- avatar and memory photo storage policies
 - food edit/history/favorite fields
-- realtime publication entries for `foods`, `rooms`, and `room_members`
+- realtime publication entries for `foods`, `rooms`, `room_members`, and `memories`
+
+## Map Link Resolver Function
+
+Shortened Naver/Kakao map links are resolved server-side with a Supabase Edge Function:
+
+- function path: `supabase/functions/resolve-map-link/index.ts`
+- expected secret: `KAKAO_REST_API_KEY`
+
+Set the secret in Supabase before deploying the function:
+
+```bash
+supabase secrets set KAKAO_REST_API_KEY=your-kakao-rest-api-key
+```
+
+Then deploy:
+
+```bash
+supabase functions deploy resolve-map-link --use-api
+```
 
 For a fresh project, `supabase/schema.sql` contains the full schema.
 

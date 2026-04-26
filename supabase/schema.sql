@@ -35,7 +35,11 @@ create table if not exists room_members (
 create table if not exists foods (
   id         uuid primary key default gen_random_uuid(),
   name       text not null,
+  place_name text,
   location   text,
+  map_url    text,
+  latitude   double precision,
+  longitude  double precision,
   person     text check (person in ('여친', '남친', '둘다')),
   category   text,
   notes      text,
@@ -48,6 +52,17 @@ create table if not exists foods (
   updated_at timestamptz default now()
 );
 
+create table if not exists memories (
+  id         uuid primary key default gen_random_uuid(),
+  room_id    uuid not null references rooms(id) on delete cascade,
+  food_id    uuid not null references foods(id) on delete cascade,
+  created_by uuid not null references auth.users(id) on delete cascade,
+  photo_url  text,
+  note       text,
+  visited_at timestamptz not null,
+  created_at timestamptz default now()
+);
+
 -- ============================================================
 -- Row Level Security
 -- ============================================================
@@ -56,6 +71,7 @@ alter table profiles      enable row level security;
 alter table rooms         enable row level security;
 alter table room_members  enable row level security;
 alter table foods         enable row level security;
+alter table memories      enable row level security;
 
 -- ============================================================
 -- Couple Safety Functions
@@ -379,11 +395,72 @@ create policy "foods: members can update"
     )
   );
 
+-- ── memories policies ─────────────────────────────────────────
+drop policy if exists "memories: members can read" on memories;
+create policy "memories: members can read"
+  on memories for select to authenticated
+  using (
+    exists (
+      select 1
+      from room_members rm
+      where rm.user_id = auth.uid()
+        and rm.room_id = memories.room_id
+    )
+  );
+
+drop policy if exists "memories: members can insert" on memories;
+create policy "memories: members can insert"
+  on memories for insert to authenticated
+  with check (
+    exists (
+      select 1
+      from room_members rm
+      where rm.user_id = auth.uid()
+        and rm.room_id = memories.room_id
+    )
+  );
+
+drop policy if exists "memories: members can update" on memories;
+create policy "memories: members can update"
+  on memories for update to authenticated
+  using (
+    exists (
+      select 1
+      from room_members rm
+      where rm.user_id = auth.uid()
+        and rm.room_id = memories.room_id
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from room_members rm
+      where rm.user_id = auth.uid()
+        and rm.room_id = memories.room_id
+    )
+  );
+
+drop policy if exists "memories: members can delete" on memories;
+create policy "memories: members can delete"
+  on memories for delete to authenticated
+  using (
+    exists (
+      select 1
+      from room_members rm
+      where rm.user_id = auth.uid()
+        and rm.room_id = memories.room_id
+    )
+  );
+
 -- ============================================================
 -- Storage (for profile pictures)
 -- ============================================================
 insert into storage.buckets (id, name, public)
 values ('avatars', 'avatars', true)
+on conflict (id) do nothing;
+
+insert into storage.buckets (id, name, public)
+values ('memory-photos', 'memory-photos', true)
 on conflict (id) do nothing;
 
 drop policy if exists "avatars: public read" on storage.objects;
@@ -419,15 +496,49 @@ create policy "avatars: authenticated delete own"
     and auth.uid()::text = (storage.foldername(name))[1]
   );
 
+drop policy if exists "memory-photos: public read" on storage.objects;
+create policy "memory-photos: public read"
+  on storage.objects for select to public
+  using (bucket_id = 'memory-photos');
+
+drop policy if exists "memory-photos: authenticated upload own room memory" on storage.objects;
+create policy "memory-photos: authenticated upload own room memory"
+  on storage.objects for insert to authenticated
+  with check (
+    bucket_id = 'memory-photos'
+    and auth.uid()::text = (storage.foldername(name))[2]
+  );
+
+drop policy if exists "memory-photos: authenticated update own room memory" on storage.objects;
+create policy "memory-photos: authenticated update own room memory"
+  on storage.objects for update to authenticated
+  using (
+    bucket_id = 'memory-photos'
+    and auth.uid()::text = (storage.foldername(name))[2]
+  )
+  with check (
+    bucket_id = 'memory-photos'
+    and auth.uid()::text = (storage.foldername(name))[2]
+  );
+
+drop policy if exists "memory-photos: authenticated delete own room memory" on storage.objects;
+create policy "memory-photos: authenticated delete own room memory"
+  on storage.objects for delete to authenticated
+  using (
+    bucket_id = 'memory-photos'
+    and auth.uid()::text = (storage.foldername(name))[2]
+  );
+
 -- ============================================================
 -- Realtime
 -- ============================================================
 -- Enable Realtime for both tables via Dashboard:
--- Database → Replication → select "foods", "rooms", and "room_members"
+-- Database → Replication → select "foods", "rooms", "room_members", and "memories"
 -- Or:
 -- alter publication supabase_realtime add table foods;
 -- alter publication supabase_realtime add table rooms;
 -- alter publication supabase_realtime add table room_members;
+-- alter publication supabase_realtime add table memories;
 
 -- ============================================================
 -- Indexes (performance)
@@ -437,4 +548,9 @@ create index if not exists idx_room_members_room_id on room_members(room_id);
 create index if not exists idx_foods_room_id        on foods(room_id);
 create index if not exists idx_foods_eaten_at       on foods(eaten_at);
 create index if not exists idx_foods_category       on foods(category);
+create index if not exists idx_foods_latitude       on foods(latitude);
+create index if not exists idx_foods_longitude      on foods(longitude);
+create index if not exists idx_memories_room_id     on memories(room_id);
+create index if not exists idx_memories_food_id     on memories(food_id);
+create index if not exists idx_memories_visited_at  on memories(visited_at);
 create index if not exists idx_rooms_invite_code    on rooms(invite_code);
