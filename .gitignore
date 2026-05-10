@@ -25,3 +25,9 @@ pnpm-debug.log*
 
 # Local Netlify folder
 .netlify
+
+# local assistant/generated artifacts
+.codex/
+output/
+tmp/
+supabase/.temp/
