@@ -22,3 +22,12 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# Local Netlify folder
+.netlify
+
+# local assistant/generated artifacts
+.codex/
+output/
+tmp/
+supabase/.temp/
